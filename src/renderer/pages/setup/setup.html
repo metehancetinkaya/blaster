@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mobile Web Tester - Setup</title>
+    <link rel="stylesheet" href="../../styles.css">
+</head>
+<body>
+    <div class="theme-toggle">
+        <button id="theme-toggle-btn" class="theme-toggle-btn" aria-label="Toggle theme">
+            <svg class="sun-icon" viewBox="0 0 24 24">
+                <path d="M12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.65 0-3 1.35-3 3s1.35 3 3 3 3-1.35 3-3-1.35-3-3-3zm0-2V4m0 16v-3M4 12H1m22 0h-3M5.64 5.64L3.5 3.5m16.36.14l-2.14 2.14M5.64 18.36l-2.14 2.14m16.36-.14l-2.14-2.14"/>
+            </svg>
+            <svg class="moon-icon" viewBox="0 0 24 24">
+                <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z"/>
+            </svg>
+        </button>
+    </div>
+
+    <div class="app-container">
+        <div class="titlebar">
+            <div class="titlebar-text">Mobile Web Tester - Setup</div>
+        </div>
+        
+        <div class="container">
+            <h1>Setup Required Dependencies</h1>
+            
+            <div class="setup-card">
+                <div class="setup-item">
+                    <div class="setup-header">
+                        <h2>Xcode</h2>
+                        <span id="xcode-status" class="status">Checking...</span>
+                    </div>
+                    <p>Required for iOS simulation. This will install Xcode from the Mac App Store.</p>
+                    <div class="setup-actions">
+                        <button id="install-xcode" class="install-btn" disabled>Install Xcode</button>
+                        <div id="xcode-progress" class="progress-bar">
+                            <div class="progress"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setup-item">
+                    <div class="setup-header">
+                        <h2>Android Studio</h2>
+                        <span id="android-status" class="status">Checking...</span>
+                    </div>
+                    <p>Required for Android emulation. This will download and install Android Studio.</p>
+                    <div class="setup-actions">
+                        <button id="install-android" class="install-btn" disabled>Install Android Studio</button>
+                        <div id="android-progress" class="progress-bar">
+                            <div class="progress"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setup-footer">
+                <button id="continue-btn" class="continue-btn" disabled>Continue to App</button>
+                <p id="setup-message" class="setup-message"></p>
+            </div>
+        </div>
+    </div>
+    <script src="setup.js"></script>
+</body>
+</html>

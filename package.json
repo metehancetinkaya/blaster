@@ -1,0 +1,38 @@
+{
+  "name": "mobile-web-tester",
+  "version": "1.0.0",
+  "description": "Test websites on iOS and Android simulators",
+  "main": "./src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "jest",
+    "lint": "eslint src/**/*.js",
+    "format": "prettier --write 'src/**/*.js'",
+    "build": "electron-builder"
+  },
+  "build": {
+    "appId": "com.mobiletester.app",
+    "mac": {
+      "category": "public.app-category.developer-tools"
+    }
+  },
+  "keywords": [
+    "mobile",
+    "testing",
+    "ios",
+    "android",
+    "simulator"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "electron": "^28.1.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^24.9.1",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.1.1"
+  }
+}
