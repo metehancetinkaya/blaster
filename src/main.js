@@ -3,6 +3,7 @@ const path = require('path');
 const url = require('url');
 const MobileWebTester = require('./MobileWebTester');
 const SetupManager = require('./SetupManager');
+const { exec } = require('child_process');
 
 let mainWindow;
 let tester;
@@ -61,6 +62,30 @@ ipcMain.handle('check-android-studio', () => setupManager.checkAndroidStudio());
 ipcMain.handle('fix-android-setup', () => setupManager.fixAndroidSetup());
 ipcMain.handle('install-xcode', () => setupManager.installXcode());
 ipcMain.handle('install-android-studio', () => setupManager.installAndroidStudio());
+
+// Browser inspection handlers
+ipcMain.on('open-safari', () => {
+    exec('open -a Safari /Applications/Safari.app', (error) => {
+        if (error) {
+            console.error('Error opening Safari:', error);
+        }
+    });
+});
+
+ipcMain.on('open-chrome-inspect', () => {
+    exec('open -a "Google Chrome" chrome://inspect/#devices', (error) => {
+        if (error) {
+            console.error('Error opening Chrome:', error);
+        }
+    });
+});
+
+// iOS Runtime handlers
+ipcMain.handle('check-ios-runtimes', () => setupManager.checkIosRuntimes());
+ipcMain.handle('get-available-ios-versions', () => setupManager.getAvailableIosVersions());
+ipcMain.handle('install-ios-runtime', (event, version) => setupManager.installIosRuntime(version));
+ipcMain.handle('open-xcode-components', () => setupManager.openXcodeComponents());
+
 ipcMain.handle('continue-to-app', () => {
     mainWindow.loadURL(url.format({
         pathname: path.join(__dirname, 'renderer', 'index.html'),
@@ -72,6 +97,10 @@ ipcMain.handle('continue-to-app', () => {
 // IPC handlers
 ipcMain.handle('get-ios-devices', async () => {
     return await tester.getIosDevices();
+});
+
+ipcMain.handle('get-compatible-devices', async (event, runtimeIdentifier) => {
+    return await tester.getCompatibleDevices(runtimeIdentifier);
 });
 
 ipcMain.handle('get-android-devices', async () => {

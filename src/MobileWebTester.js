@@ -1,47 +1,67 @@
 const util = require('util');
 const { exec } = require('child_process');
 const chalk = require('chalk');
+const fs = require('fs');
 const execAsync = util.promisify(exec);
 
 class MobileWebTester {
   constructor() {
     this.iosDevice = null;
     this.androidDevice = null;
+    this.androidVersion = null;
+    this.deviceCompatibilityMap = null;
   }
 
   async getIosDevices() {
     try {
       // Get all available runtimes
       const { stdout: runtimesOutput } = await execAsync('xcrun simctl list runtimes --json');
-      const runtimes = JSON.parse(runtimesOutput).runtimes
+      const allRuntimes = JSON.parse(runtimesOutput).runtimes;
+      
+      // Only include properly installed iOS runtimes
+      const runtimes = allRuntimes
         .filter(runtime => runtime.isAvailable && runtime.name.includes('iOS'))
         .map(runtime => ({
           name: runtime.name,
           identifier: runtime.identifier,
-          version: runtime.version
+          version: runtime.version,
+          buildversion: runtime.buildversion,
+          supportedDeviceTypes: runtime.supportedDeviceTypes || []
         }));
 
-      // Get all device types
-      const { stdout: deviceTypesOutput } = await execAsync('xcrun simctl list devicetypes --json');
-      const deviceTypes = JSON.parse(deviceTypesOutput).devicetypes
-        .filter(device => {
-          const name = device.name.toLowerCase();
-          // Include only recent iPhone and iPad models
-          return (name.includes('iphone') || name.includes('ipad')) && 
-                 !name.includes('retina') && // Exclude older retina models
-                 !name.includes('1st') && !name.includes('2nd') && // Exclude older generations
-                 !name.includes('3rd') && !name.includes('4th');
-        })
-        .map(device => ({
-          name: device.name,
-          identifier: device.identifier
-        }));
+      if (runtimes.length === 0) {
+        console.log('No available iOS runtimes found');
+        return { devices: [], runtimes: [] };
+      }
 
-      console.log('Available device types:', deviceTypes);
-      console.log('Available runtimes:', runtimes);
+      // Create a map of compatible devices for each runtime
+      const compatibilityMap = new Map();
+      
+      for (const runtime of runtimes) {
+        // Get supported device types for this runtime
+        const compatibleDevices = runtime.supportedDeviceTypes
+          .filter(device => {
+            const name = device.name.toLowerCase();
+            return (name.includes('iphone') || name.includes('ipad')) && 
+                   !name.includes('retina');
+          })
+          .map(device => ({
+            name: device.name,
+            identifier: device.identifier,
+            productFamily: device.productFamily
+          }));
+
+        compatibilityMap.set(runtime.identifier, compatibleDevices);
+      }
+
+      // Store the compatibility map for use when switching versions
+      this.deviceCompatibilityMap = compatibilityMap;
+
+      // Get the compatible devices for the first runtime
+      const initialDevices = compatibilityMap.get(runtimes[0]?.identifier) || [];
 
       return {
-        devices: deviceTypes,
+        devices: initialDevices,
         runtimes: runtimes
       };
     } catch (error) {
@@ -50,53 +70,164 @@ class MobileWebTester {
     }
   }
 
+  async getCompatibleDevices(runtimeIdentifier) {
+    return this.deviceCompatibilityMap?.get(runtimeIdentifier) || [];
+  }
+
   async getAndroidDevices() {
     try {
-      const androidHome = process.env.ANDROID_HOME || `${process.env.HOME}/Library/Android/sdk`;
-      const sdkmanager = `${androidHome}/cmdline-tools/latest/bin/sdkmanager`;
-      
-      // Get available system images
-      const { stdout: systemImages } = await execAsync(`"${sdkmanager}" --list_installed`);
-      const versions = systemImages
-        .split('\n')
-        .filter(line => line.includes('system-images;android-'))
-        .map(line => {
-          const match = line.match(/system-images;android-(\d+);([^;]+);([^|]+)/);
-          if (match) {
-            return {
-              version: match[1],
-              type: match[2],
-              arch: match[3].trim()
-            };
-          }
-          return null;
-        })
-        .filter(Boolean);
+      // Check multiple possible SDK locations
+      const possibleSdkPaths = [
+        process.env.ANDROID_HOME,
+        `${process.env.HOME}/Library/Android/sdk`,
+        `${process.env.HOME}/Android/Sdk`
+      ].filter(Boolean);
 
-      // Get available device definitions
-      const { stdout: avdOutput } = await execAsync(`"${androidHome}/emulator/emulator" -list-avds`);
-      const devices = avdOutput.trim().split('\n').filter(Boolean);
-
-      // If no devices found, create a default one
-      if (devices.length === 0) {
-        console.log('No Android devices found, creating default device...');
-        await this.createDefaultAndroidDevice();
-        
-        // Check again for devices
-        const { stdout: newAvdOutput } = await execAsync(`"${androidHome}/emulator/emulator" -list-avds`);
-        return {
-          devices: newAvdOutput.trim().split('\n').filter(Boolean).map(name => ({ name })),
-          versions: versions
-        };
+      let androidHome = null;
+      for (const path of possibleSdkPaths) {
+        try {
+          await execAsync(`test -d "${path}"`);
+          androidHome = path;
+          break;
+        } catch (e) {
+          continue;
+        }
       }
 
+      if (!androidHome) {
+        console.error('Android SDK not found in common locations');
+        return { devices: [], versions: [] };
+      }
+
+      // Get AVD files from the correct location
+      const avdPath = `${process.env.HOME}/.android/avd`;
+      const { stdout: avdFiles } = await execAsync(`ls "${avdPath}" 2>/dev/null || true`);
+      
+      // Parse .ini files to get device names
+      const devices = avdFiles
+        .split('\n')
+        .filter(file => file.endsWith('.ini'))
+        .map(file => ({
+          name: file.replace('.ini', '')
+        }));
+
+      // Get installed system images and platforms
+      let versions = [];
+      try {
+        // First try to get versions from platforms directory
+        const { stdout: platformsDir } = await execAsync(`ls "${androidHome}/platforms"`);
+        const platformDirVersions = platformsDir
+          .split('\n')
+          .filter(dir => dir.startsWith('android-'))
+          .map(dir => dir.replace('android-', ''))
+          .filter(v => !isNaN(v));
+        
+        console.log('Versions found in platforms directory:', platformDirVersions);
+        
+        if (platformDirVersions.length > 0) {
+          versions = platformDirVersions
+            .sort((a, b) => parseInt(b) - parseInt(a))
+            .map(version => ({
+              version,
+              name: this.getAndroidVersionName(version),
+              apiLevel: version
+            }));
+        }
+
+        // If no versions found, try sdkmanager as fallback
+        if (versions.length === 0) {
+          const cmdlineToolsPath = `${androidHome}/cmdline-tools/latest/bin`;
+          const legacyToolsPath = `${androidHome}/tools/bin`;
+          
+          let sdkmanagerPath;
+          try {
+            await execAsync(`test -f "${cmdlineToolsPath}/sdkmanager"`);
+            sdkmanagerPath = `${cmdlineToolsPath}/sdkmanager`;
+          } catch (e) {
+            try {
+              await execAsync(`test -f "${legacyToolsPath}/sdkmanager"`);
+              sdkmanagerPath = `${legacyToolsPath}/sdkmanager`;
+            } catch (e) {
+              console.log('sdkmanager not found, using platform versions only');
+            }
+          }
+
+          if (sdkmanagerPath) {
+            const { stdout: installedPackages } = await execAsync(`"${sdkmanagerPath}" --list_installed`);
+            const systemImageVersions = installedPackages
+              .split('\n')
+              .filter(line => line.includes('system-images;android-'))
+              .map(line => {
+                const match = line.match(/system-images;android-(\d+);([^;]+);([^|]+)/);
+                if (match) {
+                  return {
+                    version: match[1],
+                    type: match[2],
+                    arch: match[3].trim()
+                  };
+                }
+                return null;
+              })
+              .filter(Boolean);
+
+            if (systemImageVersions.length > 0) {
+              const additionalVersions = systemImageVersions
+                .map(v => v.version)
+                .filter(v => !versions.some(existing => existing.version === v));
+
+              versions.push(...additionalVersions.map(version => ({
+                version,
+                name: this.getAndroidVersionName(version),
+                apiLevel: version
+              })));
+
+              // Re-sort all versions
+              versions.sort((a, b) => parseInt(b.version) - parseInt(a.version));
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error getting Android versions:', error);
+      }
+
+      console.log('Final Android versions to be displayed:', versions);
+
+      console.log('Found Android devices:', devices);
+      console.log('Found Android versions:', versions);
+
       return {
-        devices: devices.map(name => ({ name })),
+        devices: devices,
         versions: versions
       };
     } catch (error) {
       console.error('Error getting Android devices:', error);
       return { devices: [], versions: [] };
+    }
+  }
+
+  async createIosDevice(deviceType, runtime) {
+    try {
+      // First check if this combination is compatible
+      const { stdout: devicesOutput } = await execAsync('xcrun simctl list devices --json');
+      const devices = JSON.parse(devicesOutput).devices;
+      
+      // Check if there are any existing devices with this runtime
+      const runtimeDevices = devices[runtime.identifier] || [];
+      const compatibleDevice = runtimeDevices.find(d => 
+        d.deviceTypeIdentifier === deviceType.identifier && 
+        !d.isDeleted && 
+        !d.error
+      );
+
+      if (!compatibleDevice) {
+        throw new Error(`Device ${deviceType.name} is not compatible with iOS ${runtime.version}`);
+      }
+
+      const { stdout } = await execAsync(`xcrun simctl create "${deviceType.name}" "${deviceType.identifier}" "${runtime.identifier}"`);
+      return stdout.trim();
+    } catch (error) {
+      console.error('Error creating iOS device:', error);
+      throw error;
     }
   }
 
@@ -120,32 +251,22 @@ class MobileWebTester {
     }
   }
 
-  async createIosDevice(deviceType, runtime) {
-    try {
-      const { stdout } = await execAsync(`xcrun simctl create "${deviceType.name}" "${deviceType.identifier}" "${runtime.identifier}"`);
-      return stdout.trim();
-    } catch (error) {
-      console.error('Error creating iOS device:', error);
-      throw new Error('Failed to create iOS device');
-    }
-  }
-
-  setIosDevice(deviceName, runtime) {
-    console.log('Setting iOS device:', { deviceName, runtime });
-    this.iosDevice = {
-      name: deviceName,
-      runtime: runtime
+  getAndroidVersionName(apiLevel) {
+    const versionMap = {
+      '34': 'Android 14',
+      '33': 'Android 13',
+      '32': 'Android 12L',
+      '31': 'Android 12',
+      '30': 'Android 11',
+      '29': 'Android 10',
+      '28': 'Android 9',
+      '27': 'Android 8.1',
+      '26': 'Android 8.0',
+      '25': 'Android 7.1',
+      '24': 'Android 7.0',
+      '23': 'Android 6.0'
     };
-    console.log('Current iOS device:', this.iosDevice);
-  }
-
-  setAndroidDevice(deviceName, version) {
-    console.log('Setting Android device:', { deviceName, version });
-    this.androidDevice = {
-      name: deviceName,
-      version: version
-    };
-    console.log('Current Android device:', this.androidDevice);
+    return versionMap[apiLevel] || `Android API ${apiLevel}`;
   }
 
   async launchIosSimulator(url) {
@@ -211,51 +332,57 @@ class MobileWebTester {
   async launchAndroidEmulator(url) {
     try {
       if (!this.androidDevice) {
-        throw new Error('No Android device selected');
+        // Get available devices and use the first one
+        const { devices, versions } = await this.getAndroidDevices();
+        if (devices.length > 0 && versions.length > 0) {
+          const defaultDevice = devices[0].name;
+          const defaultVersion = versions[0].version;
+          await this.setAndroidDevice(defaultDevice, defaultVersion);
+        } else {
+          throw new Error('No Android devices available. Please create one in Android Studio.');
+        }
       }
 
+      // Find Android SDK path
       const androidHome = process.env.ANDROID_HOME || `${process.env.HOME}/Library/Android/sdk`;
       const emulatorPath = `${androidHome}/emulator/emulator`;
-      const adbPath = `${androidHome}/platform-tools/adb`;
 
-      console.log(`Starting Android emulator: ${this.androidDevice.name}`);
+      console.log(`Using Android device: ${this.androidDevice}`);
+      console.log(`Checking if emulator ${this.androidDevice} is running...`);
 
-      // Start emulator in background
-      exec(`"${emulatorPath}" -avd ${this.androidDevice.name}`);
+      const { stdout: runningDevices } = await execAsync('adb devices');
+      const isEmulatorRunning = runningDevices.includes(this.androidDevice);
 
-      // Wait for emulator to boot and be ready
-      console.log('Waiting for emulator to boot...');
-      let booted = false;
-      let attempts = 0;
-      const maxAttempts = 30; // 30 attempts * 2 seconds = 60 seconds max wait time
-
-      while (!booted && attempts < maxAttempts) {
-        try {
-          const { stdout } = await execAsync('adb devices');
-          if (stdout.includes('device')) {
-            const { stdout: bootAnim } = await execAsync('adb shell getprop init.svc.bootanim');
-            if (bootAnim.trim() === 'stopped') {
-              booted = true;
-              break;
-            }
+      if (!isEmulatorRunning) {
+        console.log(chalk.yellow(`Starting Android emulator: ${this.androidDevice}`));
+        
+        // Use the full path to emulator and the device name
+        const emulatorCommand = `"${emulatorPath}" -avd "${this.androidDevice}"`;
+        console.log(`Running command: ${emulatorCommand}`);
+        
+        // Start emulator in background
+        const childProcess = exec(emulatorCommand, (error) => {
+          if (error) {
+            console.error('Error starting emulator:', error);
           }
-        } catch (error) {
-          console.log('Waiting for emulator to be ready...');
-        }
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        attempts++;
+        });
+        
+        // Wait for the emulator to fully start
+        console.log(chalk.yellow('Waiting for emulator to start...'));
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        // Wait for device to be ready
+        await execAsync('adb wait-for-device');
       }
 
-      if (!booted) {
-        throw new Error('Timeout waiting for Android emulator to boot');
-      }
+      // Launch Chrome with the URL
+      console.log(chalk.yellow(`Opening URL in Android Chrome: ${url}`));
+      await execAsync(`adb shell am start -a android.intent.action.VIEW -d "${url}"`);
 
-      console.log(`Opening ${url} in Android emulator...`);
-      await execAsync(`"${adbPath}" shell am start -a android.intent.action.VIEW -d "${url}"`);
-      console.log(`Successfully opened ${url} in Android emulator`);
+      return { success: true };
     } catch (error) {
       console.error('Error launching Android emulator:', error);
-      throw error;
+      throw new Error(`Error launching Android emulator: ${error.message}`);
     }
   }
 
@@ -279,8 +406,8 @@ class MobileWebTester {
 
   async checkAndroidSetup() {
     try {
-      const androidHome = process.env.ANDROID_HOME || `${process.env.HOME}/Library/Android/sdk`;
-      
+      const androidHome = process.env.ANDROID_HOME || `${process.env.HOME}/.android/avd`;
+      console.log(androidHome)
       // Check if Android SDK exists
       const { stdout: adbVersion } = await execAsync(`${androidHome}/platform-tools/adb --version`);
       const { stdout: emulatorVersion } = await execAsync(`${androidHome}/emulator/emulator -version`);
@@ -296,6 +423,32 @@ class MobileWebTester {
         error: 'Android SDK not found. Please install Android Studio and set ANDROID_HOME.'
       };
     }
+  }
+
+  setIosDevice(deviceName, runtime) {
+    console.log('Setting iOS device:', { deviceName, runtime });
+    this.iosDevice = {
+      name: deviceName,
+      runtime: runtime
+    };
+    console.log('Current iOS device:', this.iosDevice);
+  }
+
+  async setAndroidDevice(deviceName, version) {
+    console.log(`Setting Android device: ${deviceName}, version: ${version}`);
+    this.androidDevice = deviceName;
+    this.androidVersion = version;
+  }
+
+  getDefaultAndroidVersion(deviceName) {
+    // Try to extract version from device name
+    const versionMatch = deviceName.match(/API[_\s](\d+)/i);
+    if (versionMatch) {
+      return versionMatch[1];
+    }
+    
+    // Default to latest stable version if no version in name
+    return '33'; // Android 13
   }
 }
 

@@ -128,116 +128,187 @@ class SetupManager {
         }
     }
 
+    async checkIosRuntimes() {
+        try {
+            const { stdout } = await execAsync('xcrun simctl list runtimes --json');
+            const runtimes = JSON.parse(stdout).runtimes;
+            
+            // Filter iOS runtimes and map to a simpler format
+            const iosRuntimes = runtimes
+                .filter(runtime => runtime.name.includes('iOS'))
+                .map(runtime => ({
+                    name: runtime.name,
+                    version: runtime.version,
+                    buildversion: runtime.buildversion,
+                    isAvailable: runtime.isAvailable
+                }));
+
+            return {
+                installed: true,
+                runtimes: iosRuntimes
+            };
+        } catch (error) {
+            console.error('Error checking iOS runtimes:', error);
+            return { 
+                installed: false, 
+                error: error.message,
+                runtimes: []
+            };
+        }
+    }
+
+    async openXcodeComponents() {
+        try {
+            // First check if Xcode is installed
+            const xcodeResult = await this.checkXcode();
+            if (!xcodeResult.installed) {
+                throw new Error('Xcode is not installed');
+            }
+
+            // Open Xcode
+            await execAsync('open -a "Xcode"');
+            
+            // Wait a moment for Xcode to open
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            // Open Xcode preferences using a more reliable AppleScript command
+            const openPrefsScript = `
+                tell application "System Events"
+                    tell process "Xcode"
+                        click menu item "Settings…" of menu "Xcode" of menu bar 1
+                    end tell
+                end tell
+            `;
+            
+            await execAsync(`osascript -e '${openPrefsScript}'`);
+
+            // Show a message to the user about where to find the Components tab
+            return {
+                success: true,
+                message: 'Opened Xcode Settings. Please click on the "Components" tab to view available iOS versions.'
+            };
+        } catch (error) {
+            console.error('Error opening Xcode Settings:', error);
+            return {
+                success: false,
+                error: `Error opening Xcode Settings: ${error.message}`
+            };
+        }
+    }
+
+    async getAvailableIosVersions() {
+        try {
+            // Get currently installed runtimes
+            const { runtimes: installedRuntimes } = await this.checkIosRuntimes();
+            const installedVersions = new Set(installedRuntimes.map(r => r.version));
+
+            // List of supported iOS versions (you can update this list as needed)
+            const supportedVersions = [
+                { version: '18.2', name: 'iOS 18.2', identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-18-2' },
+                { version: '17.2', name: 'iOS 17.2', identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-17-2' },
+                { version: '17.0', name: 'iOS 17.0', identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-17-0' },
+                { version: '16.4', name: 'iOS 16.4', identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-16-4' },
+                { version: '16.2', name: 'iOS 16.2', identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-16-2' },
+                { version: '16.0', name: 'iOS 16.0', identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-16-0' }
+            ];
+
+            // Filter out installed versions
+            const availableVersions = supportedVersions.filter(v => !installedVersions.has(v.version));
+
+            return {
+                success: true,
+                versions: availableVersions
+            };
+        } catch (error) {
+            console.error('Error getting available iOS versions:', error);
+            return {
+                success: false,
+                error: error.message,
+                versions: []
+            };
+        }
+    }
+
+    async installIosRuntime(version) {
+        try {
+            // First check if Xcode Command Line Tools are installed
+            await execAsync('xcode-select -p');
+            
+            // Find the runtime identifier for the requested version
+            const { stdout: runtimeList } = await execAsync('xcrun simctl list runtimes --json');
+            const runtimes = JSON.parse(runtimeList).runtimes;
+            const runtime = runtimes.find(r => r.version === version);
+
+            if (!runtime) {
+                // Check if runtime is available for download
+                const { stdout: availableList } = await execAsync('xcrun xcodebuild -showsdks');
+                if (!availableList.includes(`iOS ${version}`)) {
+                    throw new Error(`iOS ${version} is not available in your Xcode installation`);
+                }
+            }
+
+            // Install the runtime using simctl
+            const { stdout } = await execAsync(`xcrun simctl runtime add "iOS ${version}"`);
+            
+            console.log('iOS Runtime installation output:', stdout);
+            
+            return {
+                success: true,
+                message: `Successfully installed iOS ${version} runtime`
+            };
+        } catch (error) {
+            console.error('Error installing iOS runtime:', error);
+            
+            // Check if it's a permission error
+            if (error.message.includes('permission denied') || error.message.includes('sudo')) {
+                return {
+                    success: false,
+                    error: 'Permission denied. Please run with sudo privileges.'
+                };
+            }
+            
+            // Check if runtime is not available
+            if (error.message.includes('not available')) {
+                return {
+                    success: false,
+                    error: `iOS ${version} is not available in your Xcode installation. Please install it through Xcode first.`
+                };
+            }
+            
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
     async installXcode() {
         try {
             // Open Mac App Store Xcode page
             await execAsync('open macappstore://apps.apple.com/app/xcode/id497799835');
-            
-            this.mainWindow.webContents.send('xcode-install-progress', 50);
-
-            // Wait for Xcode installation (this is a simplified version)
-            const checkInterval = setInterval(async () => {
-                const { installed } = await this.checkXcode();
-                if (installed) {
-                    clearInterval(checkInterval);
-                    this.mainWindow.webContents.send('xcode-install-progress', 100);
-                }
-            }, 10000);
-
+            this.mainWindow.webContents.send('xcode-install-started', {
+                message: 'Redirected to Xcode download page in Mac App Store. Please install Xcode and then restart the application.'
+            });
         } catch (error) {
-            console.error('Error installing Xcode:', error);
+            console.error('Error opening Xcode download page:', error);
             throw error;
         }
     }
 
     async installAndroidStudio() {
         try {
-            // Download Android Studio
-            this.mainWindow.webContents.send('android-install-progress', 10);
-            
-            const downloadUrl = 'https://redirector.gvt1.com/edgedl/android/studio/install/2021.2.1.16/android-studio-2021.2.1.16-mac.dmg';
-            const downloadPath = path.join(app.getPath('downloads'), 'android-studio.dmg');
-
-            await execAsync(`curl -L "${downloadUrl}" -o "${downloadPath}"`);
-            this.mainWindow.webContents.send('android-install-progress', 50);
-
-            // Mount DMG
-            await execAsync(`hdiutil attach "${downloadPath}"`);
-            this.mainWindow.webContents.send('android-install-progress', 60);
-
-            // Copy to Applications
-            await execAsync('cp -R "/Volumes/Android Studio/Android Studio.app" /Applications/');
-            this.mainWindow.webContents.send('android-install-progress', 80);
-
-            // Unmount DMG
-            await execAsync('hdiutil detach "/Volumes/Android Studio"');
-            this.mainWindow.webContents.send('android-install-progress', 90);
-
-            // Clean up
-            await execAsync(`rm "${downloadPath}"`);
-            this.mainWindow.webContents.send('android-install-progress', 100);
-
+            // Open Android Studio download page
+            await execAsync('open https://developer.android.com/studio');
+            this.mainWindow.webContents.send('android-install-started', {
+                message: 'Redirected to Android Studio download page. Please follow these steps:\n' +
+                        '1. Download and install Android Studio\n' +
+                        '2. During installation, make sure to install the Android SDK\n' +
+                        '3. After installation, open Android Studio and complete the setup wizard\n' +
+                        '4. Restart this application'
+            });
         } catch (error) {
-            console.error('Error installing Android Studio:', error);
+            console.error('Error opening Android Studio download page:', error);
             throw error;
-        }
-    }
-
-    async fixAndroidSetup() {
-        try {
-            const androidHome = process.env.ANDROID_HOME || path.join(app.getPath('home'), 'Library/Android/sdk');
-            
-            // Create .zshrc if it doesn't exist
-            const zshrcPath = path.join(app.getPath('home'), '.zshrc');
-            if (!fs.existsSync(zshrcPath)) {
-                fs.writeFileSync(zshrcPath, '');
-            }
-
-            // Read current .zshrc content
-            const currentContent = fs.readFileSync(zshrcPath, 'utf8');
-
-            // Add Android environment variables if they don't exist
-            const envVars = [
-                `export ANDROID_HOME=${androidHome}`,
-                'export PATH=$PATH:$ANDROID_HOME/tools',
-                'export PATH=$PATH:$ANDROID_HOME/tools/bin',
-                'export PATH=$PATH:$ANDROID_HOME/platform-tools',
-                'export PATH=$PATH:$ANDROID_HOME/emulator'
-            ];
-
-            let contentChanged = false;
-            let newContent = currentContent;
-
-            for (const envVar of envVars) {
-                if (!currentContent.includes(envVar)) {
-                    newContent += `\n${envVar}`;
-                    contentChanged = true;
-                }
-            }
-
-            if (contentChanged) {
-                fs.writeFileSync(zshrcPath, newContent);
-                console.log('Updated .zshrc with Android environment variables');
-            }
-
-            // Source the updated .zshrc
-            await execAsync('source ~/.zshrc');
-
-            // Install essential SDK components if needed
-            const sdkmanagerPath = path.join(androidHome, 'tools', 'bin', 'sdkmanager');
-            if (fs.existsSync(sdkmanagerPath)) {
-                try {
-                    await execAsync(`${sdkmanagerPath} --install "platform-tools" "emulator"`);
-                    console.log('Installed essential Android SDK components');
-                } catch (error) {
-                    console.error('Error installing SDK components:', error);
-                }
-            }
-
-            return { success: true };
-        } catch (error) {
-            console.error('Error fixing Android setup:', error);
-            return { success: false, error: error.message };
         }
     }
 }

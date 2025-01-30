@@ -15,6 +15,8 @@ const closeNotification = document.getElementById('closeNotification');
 const iosStatus = document.getElementById('iosStatus');
 const androidStatus = document.getElementById('androidStatus');
 const themeToggleBtn = document.getElementById('theme-toggle-btn');
+const openSafariButton = document.getElementById('openSafari');
+const openChromeInspectButton = document.getElementById('openChromeInspect');
 
 // Theme management
 function initTheme() {
@@ -39,107 +41,97 @@ function toggleTheme() {
 // Functions
 async function loadDevices() {
     try {
-        // Load iOS devices and versions
+        // Get iOS devices and versions
         const iosData = await ipcRenderer.invoke('get-ios-devices');
-        
-        // Populate iOS devices
-        if (iosData.devices.length > 0) {
-            // Group devices by type (iPhone/iPad)
-            const iphones = iosData.devices
-                .filter(device => device.name.includes('iPhone'))
-                .map(device => ({
-                    value: device.name,
-                    display: device.name
-                }));
+        console.log('Received iOS data:', iosData);
 
-            const ipads = iosData.devices
-                .filter(device => device.name.includes('iPad'))
-                .map(device => ({
-                    value: device.name,
-                    display: device.name
-                }));
-
-            // Create option groups
-            const html = [];
+        if (iosData.devices && iosData.devices.length > 0) {
+            // Populate iOS devices dropdown
+            iosDevicesSelect.innerHTML = iosData.devices
+                .map(device => `<option value="${device.name}">${device.name}</option>`)
+                .join('');
             
-            if (iphones.length > 0) {
-                html.push('<optgroup label="iPhones">');
-                html.push(iphones
-                    .map(device => `<option value="${device.value}">${device.display}</option>`)
-                    .join(''));
-                html.push('</optgroup>');
-            }
+            console.log('Populated iOS devices:', iosData.devices);
             
-            if (ipads.length > 0) {
-                html.push('<optgroup label="iPads">');
-                html.push(ipads
-                    .map(device => `<option value="${device.value}">${device.display}</option>`)
-                    .join(''));
-                html.push('</optgroup>');
+            // Set the first device as default
+            if (iosDevicesSelect.options.length > 0) {
+                iosDevicesSelect.selectedIndex = 0;
             }
-
-            iosDevicesSelect.innerHTML = html.join('');
         } else {
-            iosDevicesSelect.innerHTML = '<option value="">No iOS devices available</option>';
-            launchIOSButton.disabled = true;
-            launchBothButton.disabled = true;
+            console.log('No iOS devices available');
+            iosDevicesSelect.innerHTML = '<option value="">No devices available</option>';
         }
-        
-        // Populate iOS versions
-        if (iosData.runtimes.length > 0) {
+
+        if (iosData.runtimes && iosData.runtimes.length > 0) {
+            // Populate iOS versions dropdown
             iosVersionsSelect.innerHTML = iosData.runtimes
                 .map(runtime => {
                     const version = runtime.name.replace('iOS ', '');
-                    return `<option value="${version}">${version}</option>`;
+                    console.log('Adding runtime option:', { version, identifier: runtime.identifier });
+                    return `<option value="${version}" data-identifier="${runtime.identifier}">${version}</option>`;
                 })
                 .reverse() // Show newest versions first
                 .join('');
+
+            // Set the first version as default
+            if (iosVersionsSelect.options.length > 0) {
+                iosVersionsSelect.selectedIndex = 0;
+            }
+
+            // Trigger change event to populate compatible devices
+            const event = new Event('change');
+            iosVersionsSelect.dispatchEvent(event);
         } else {
-            iosVersionsSelect.innerHTML = '<option value="">No iOS versions available</option>';
-            launchIOSButton.disabled = true;
-            launchBothButton.disabled = true;
+            console.log('No iOS runtimes available');
+            iosVersionsSelect.innerHTML = '<option value="">No versions available</option>';
         }
 
-        // Check Android setup
-        const androidSetup = await ipcRenderer.invoke('check-android-setup');
-        
-        if (!androidSetup.isSetup) {
-            androidDevicesSelect.innerHTML = '<option value="">Android SDK not set up</option>';
-            androidVersionsSelect.innerHTML = '<option value="">Android SDK not set up</option>';
-            showNotification('Android SDK not found. Please install Android Studio and set ANDROID_HOME.', true);
-            launchAndroidButton.disabled = true;
-            launchBothButton.disabled = true;
-            return;
-        }
-
-        // Load Android devices and versions
+        // Get Android devices and versions
         const androidData = await ipcRenderer.invoke('get-android-devices');
-        
-        // Populate Android devices
-        if (androidData.devices.length > 0) {
+        console.log('Received Android data:', androidData);
+
+        if (androidData.devices && androidData.devices.length > 0) {
             androidDevicesSelect.innerHTML = androidData.devices
                 .map(device => `<option value="${device.name}">${device.name}</option>`)
                 .join('');
+            
+            // Set the first device as default
+            if (androidDevicesSelect.options.length > 0) {
+                androidDevicesSelect.selectedIndex = 0;
+                // Store the selected device name
+                const selectedDevice = androidDevicesSelect.value;
+                // Notify the main process about the selected device
+                ipcRenderer.invoke('set-android-device', selectedDevice);
+            }
         } else {
-            androidDevicesSelect.innerHTML = '<option value="">No Android devices available</option>';
-            launchAndroidButton.disabled = true;
-            launchBothButton.disabled = true;
+            androidDevicesSelect.innerHTML = '<option value="">No devices available</option>';
         }
 
-        // Populate Android versions
-        if (androidData.versions.length > 0) {
+        if (androidData.versions && androidData.versions.length > 0) {
             androidVersionsSelect.innerHTML = androidData.versions
-                .sort((a, b) => parseInt(b.version) - parseInt(a.version)) // Show newest versions first
-                .map(version => `<option value="${version.version}">Android ${version.version} (${version.type})</option>`)
+                .map(version => `<option value="${version.version}">${version.name}</option>`)
                 .join('');
+            
+            // Set the first version as default
+            if (androidVersionsSelect.options.length > 0) {
+                androidVersionsSelect.selectedIndex = 0;
+                // Store the selected version
+                const selectedVersion = androidVersionsSelect.value;
+                // Notify the main process about the selected version
+                ipcRenderer.invoke('set-android-version', selectedVersion);
+            }
         } else {
-            androidVersionsSelect.innerHTML = '<option value="">No Android versions available</option>';
-            launchAndroidButton.disabled = true;
-            launchBothButton.disabled = true;
+            androidVersionsSelect.innerHTML = '<option value="">No versions available</option>';
         }
 
+        // Update device selections in main process
+        if (androidDevicesSelect.value && androidVersionsSelect.value) {
+            await ipcRenderer.invoke('set-android-device', androidDevicesSelect.value, androidVersionsSelect.value);
+        }
+        
     } catch (error) {
-        showNotification('Error loading devices: ' + error.message, true);
+        console.error('Error loading devices:', error);
+        showNotification('Error loading devices. Please check the console for details.', true);
     }
 }
 
@@ -172,28 +164,51 @@ closeNotification.addEventListener('click', () => {
     notification.classList.add('hidden');
 });
 
+iosVersionsSelect.addEventListener('change', async () => {
+    const selectedRuntime = iosVersionsSelect.value;
+    const selectedRuntimeIdentifier = iosVersionsSelect.options[iosVersionsSelect.selectedIndex].dataset.identifier;
+    
+    console.log('iOS version changed:', { selectedRuntime, selectedRuntimeIdentifier });
+  
+    // Get compatible devices for this runtime
+    const compatibleDevices = await ipcRenderer.invoke('get-compatible-devices', selectedRuntimeIdentifier);
+    console.log('Got compatible devices:', compatibleDevices);
+  
+    // Update device dropdown with compatible devices
+    if (compatibleDevices && compatibleDevices.length > 0) {
+        iosDevicesSelect.innerHTML = compatibleDevices
+            .map(device => `<option value="${device.name}">${device.name}</option>`)
+            .join('');
+        
+        // Select first device by default if available
+        iosDevicesSelect.value = compatibleDevices[0].name;
+    } else {
+        iosDevicesSelect.innerHTML = '<option value="">No compatible devices available</option>';
+    }
+    
+    // Update the selected device
+    const selectedDevice = iosDevicesSelect.value;
+    if (selectedDevice) {
+        await ipcRenderer.invoke('set-ios-device', selectedDevice, selectedRuntime);
+    }
+});
+
 iosDevicesSelect.addEventListener('change', async (e) => {
     const selectedDevice = e.target.value;
     const selectedVersion = iosVersionsSelect.value;
     await ipcRenderer.invoke('set-ios-device', selectedDevice, selectedVersion);
 });
 
-iosVersionsSelect.addEventListener('change', async (e) => {
-    const selectedDevice = iosDevicesSelect.value;
-    const selectedVersion = e.target.value;
-    await ipcRenderer.invoke('set-ios-device', selectedDevice, selectedVersion);
+androidDevicesSelect.addEventListener('change', async () => {
+    if (androidDevicesSelect.value && androidVersionsSelect.value) {
+        await ipcRenderer.invoke('set-android-device', androidDevicesSelect.value, androidVersionsSelect.value);
+    }
 });
 
-androidDevicesSelect.addEventListener('change', async (e) => {
-    const selectedDevice = e.target.value;
-    const selectedVersion = androidVersionsSelect.value;
-    await ipcRenderer.invoke('set-android-device', selectedDevice, selectedVersion);
-});
-
-androidVersionsSelect.addEventListener('change', async (e) => {
-    const selectedDevice = androidDevicesSelect.value;
-    const selectedVersion = e.target.value;
-    await ipcRenderer.invoke('set-android-device', selectedDevice, selectedVersion);
+androidVersionsSelect.addEventListener('change', async () => {
+    if (androidDevicesSelect.value && androidVersionsSelect.value) {
+        await ipcRenderer.invoke('set-android-device', androidDevicesSelect.value, androidVersionsSelect.value);
+    }
 });
 
 async function handleLaunch(type) {
@@ -254,6 +269,15 @@ themeToggleBtn.addEventListener('click', toggleTheme);
 launchIOSButton.addEventListener('click', () => handleLaunch('ios'));
 launchAndroidButton.addEventListener('click', () => handleLaunch('android'));
 launchBothButton.addEventListener('click', () => handleLaunch('both'));
+
+// Safari and Chrome Inspector handlers
+openSafariButton.addEventListener('click', () => {
+    ipcRenderer.send('open-safari');
+});
+
+openChromeInspectButton.addEventListener('click', () => {
+    ipcRenderer.send('open-chrome-inspect');
+});
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {

@@ -95,24 +95,44 @@
             </div>
 
             <div class="buttons-container">
-                <button id="launchIOS" class="button ios-button">
-                    <svg class="icon" viewBox="0 0 24 24">
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
-                    </svg>
-                    Launch iOS
-                </button>
-                <button id="launchAndroid" class="button android-button">
-                    <svg class="icon" viewBox="0 0 24 24">
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
-                    </svg>
-                    Launch Android
-                </button>
-                <button id="launchBoth" class="button both-button">
-                    <svg class="icon" viewBox="0 0 24 24">
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
-                    </svg>
-                    Launch Both
-                </button>
+                <div class="button-column ios-column">
+                    <button id="launchIOS" class="button ios-button">
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+                        </svg>
+                        Launch iOS
+                    </button>
+                    <button id="openSafari" class="button ios-button">
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 2c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8 3.59-8 8-8zm-1 12.5v-9l6 4.5-6 4.5z"/>
+                        </svg>
+                        Open Safari
+                    </button>
+                </div>
+                
+                <div class="button-column center-column">
+                    <button id="launchBoth" class="button both-button">
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+                        </svg>
+                        Launch Both
+                    </button>
+                </div>
+
+                <div class="button-column android-column">
+                    <button id="launchAndroid" class="button android-button">
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+                        </svg>
+                        Launch Android
+                    </button>
+                    <button id="openChromeInspect" class="button android-button">
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 2c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8 3.59-8 8-8zm-1 12.5v-9l6 4.5-6 4.5z"/>
+                        </svg>
+                        Open Chrome Inspector
+                    </button>
+                </div>
             </div>
         </div>
 
