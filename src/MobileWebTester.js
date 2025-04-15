@@ -346,11 +346,12 @@ class MobileWebTester {
       // Find Android SDK path
       const androidHome = process.env.ANDROID_HOME || `${process.env.HOME}/Library/Android/sdk`;
       const emulatorPath = `${androidHome}/emulator/emulator`;
+      const adbPath = `${androidHome}/platform-tools/adb`;
 
       console.log(`Using Android device: ${this.androidDevice}`);
       console.log(`Checking if emulator ${this.androidDevice} is running...`);
 
-      const { stdout: runningDevices } = await execAsync('adb devices');
+      const { stdout: runningDevices } = await execAsync(`"${adbPath}" devices`);
       const isEmulatorRunning = runningDevices.includes(this.androidDevice);
 
       if (!isEmulatorRunning) {
@@ -369,15 +370,50 @@ class MobileWebTester {
         
         // Wait for the emulator to fully start
         console.log(chalk.yellow('Waiting for emulator to start...'));
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        await new Promise(resolve => setTimeout(resolve, 10000)); // Increased wait time
         
         // Wait for device to be ready
-        await execAsync('adb wait-for-device');
+        await execAsync(`"${adbPath}" wait-for-device`);
+        
+        // Wait for system boot to complete
+        let bootCompleted = false;
+        let attempts = 0;
+        while (!bootCompleted && attempts < 30) {
+          try {
+            const { stdout: bootStatus } = await execAsync(`"${adbPath}" shell getprop sys.boot_completed`);
+            bootCompleted = bootStatus.trim() === '1';
+            if (!bootCompleted) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              attempts++;
+            }
+          } catch (error) {
+            console.log('Waiting for device to boot...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            attempts++;
+          }
+        }
+        
+        if (!bootCompleted) {
+          throw new Error('Emulator boot timeout. Please try again or restart the emulator.');
+        }
       }
 
-      // Launch Chrome with the URL
+      // Check if Chrome is installed and get its version
+      try {
+        await execAsync(`"${adbPath}" shell pm list packages com.android.chrome`);
+      } catch (error) {
+        throw new Error('Google Chrome is not installed on the emulator. Please install it first.');
+      }
+
+      // Launch Chrome with the URL using the full activity name
       console.log(chalk.yellow(`Opening URL in Android Chrome: ${url}`));
-      await execAsync(`adb shell am start -a android.intent.action.VIEW -d "${url}"`);
+      try {
+        await execAsync(`"${adbPath}" shell am start -n com.android.chrome/com.google.android.apps.chrome.Main -a android.intent.action.VIEW -d "${url}"`);
+      } catch (chromeError) {
+        // Fallback to default browser if Chrome fails
+        console.log('Falling back to default browser...');
+        await execAsync(`"${adbPath}" shell am start -a android.intent.action.VIEW -d "${url}"`);
+      }
 
       return { success: true };
     } catch (error) {
@@ -400,6 +436,24 @@ class MobileWebTester {
       return false;
     } catch (error) {
       console.error('Error checking simulator state:', error);
+      return false;
+    }
+  }
+
+  async checkAndroidState() {
+    try {
+      const androidHome = process.env.ANDROID_HOME || `${process.env.HOME}/Library/Android/sdk`;
+      const adbPath = `${androidHome}/platform-tools/adb`;
+      
+      // Check if any emulator is running
+      const { stdout: devices } = await execAsync(`"${adbPath}" devices`);
+      const runningDevices = devices.split('\n')
+        .filter(line => line.includes('emulator-') && line.includes('device'))
+        .length > 0;
+      
+      return runningDevices;
+    } catch (error) {
+      console.error('Error checking Android state:', error);
       return false;
     }
   }

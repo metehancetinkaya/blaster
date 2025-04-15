@@ -155,8 +155,13 @@ function validateUrl(url) {
 }
 
 async function updateSimulatorStatus() {
+    // Check iOS simulator status
     const isIosRunning = await ipcRenderer.invoke('check-simulator');
     iosStatus.classList.toggle('active', isIosRunning);
+
+    // Check Android emulator status
+    const isAndroidRunning = await ipcRenderer.invoke('check-android');
+    androidStatus.classList.toggle('active', isAndroidRunning);
 }
 
 // Event Listeners
@@ -279,10 +284,12 @@ openChromeInspectButton.addEventListener('click', () => {
     ipcRenderer.send('open-chrome-inspect');
 });
 
-// Initialize
+// Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     loadDevices();
     updateSimulatorStatus();
-    setInterval(updateSimulatorStatus, 5000); // Check status every 5 seconds
+    
+    // Start periodic status updates
+    setInterval(updateSimulatorStatus, 5000);
 });

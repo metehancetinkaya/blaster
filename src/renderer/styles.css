@@ -296,82 +296,81 @@ body {
 
 .buttons-container {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 20px;
-    margin-top: 20px;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    padding: 20px;
     width: 100%;
 }
 
 .button-column {
     display: flex;
-    flex-direction: column;
     gap: 10px;
-    flex: 1;
-}
-
-.ios-column {
-    align-items: flex-start;
-}
-
-.center-column {
-    align-items: center;
-    justify-content: center;
-}
-
-.android-column {
-    align-items: flex-end;
 }
 
 .button {
-    padding: 16px 24px;
-    border: none;
-    border-radius: 12px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
     display: flex;
     align-items: center;
-    color: var(--button-text);
     justify-content: center;
-    gap: 12px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-color);
+    cursor: pointer;
     transition: all 0.3s ease;
-    position: relative;
-    overflow: hidden;
-    width: 300px;
+    font-size: 14px;
+    min-width: 44px;
+    height: 44px;
 }
 
-.button::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
-    opacity: 0;
-    transition: opacity 0.3s ease;
+.button.inspector-button {
+    padding: 10px;
+    min-width: 44px;
 }
 
-.button:hover::before {
-    opacity: 1;
+.button.inspector-button .icon {
+    margin: 0;
 }
 
-.button > * {
-    position: relative;
-    z-index: 1;
+.button .icon {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+}
+
+.button.inspector-button span {
+    font-family: monospace;
+    font-size: 16px;
+    font-weight: bold;
 }
 
 .ios-button {
-    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.ios-button:hover {
+    background: var(--primary-color);
+    color: var(--button-text);
 }
 
 .android-button {
-    background-color: var(--android-color);
+    border-color: var(--android-color);
+}
+
+.android-button:hover {
+    background: var(--android-color);
+    color: var(--button-text);
 }
 
 .both-button {
-    background-color: var(--both-color);
+    border-color: var(--both-color);
+}
+
+.both-button:hover {
+    background: var(--both-color);
+    color: var(--button-text);
 }
 
 .button:hover:not(:disabled) {

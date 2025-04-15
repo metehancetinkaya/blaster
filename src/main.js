@@ -115,8 +115,13 @@ ipcMain.handle('set-ios-device', async (event, deviceName, runtime) => {
 
 ipcMain.handle('set-android-device', async (event, deviceName, version) => {
     console.log('IPC: Setting Android device:', { deviceName, version });
-    tester.setAndroidDevice(deviceName, version);
-    return { success: true };
+    try {
+        await tester.setAndroidDevice(deviceName, version);
+        return { success: true };
+    } catch (error) {
+        console.error('Error setting Android device:', error);
+        return { success: false, error: error.message };
+    }
 });
 
 ipcMain.handle('launch-ios', async (event, url) => {
@@ -135,12 +140,32 @@ ipcMain.handle('launch-android', async (event, url) => {
         await tester.launchAndroidEmulator(url);
         return { success: true };
     } catch (error) {
+        console.error('Error launching Android:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('set-android-version', async (event, version) => {
+    console.log('IPC: Redirecting set-android-version to set-android-device');
+    try {
+        const { devices } = await tester.getAndroidDevices();
+        if (devices.length === 0) {
+            throw new Error('No Android devices available');
+        }
+        await tester.setAndroidDevice(devices[0].name, version);
+        return { success: true };
+    } catch (error) {
+        console.error('Error setting Android version:', error);
         return { success: false, error: error.message };
     }
 });
 
 ipcMain.handle('check-simulator', async () => {
     return await tester.checkSimulatorState();
+});
+
+ipcMain.handle('check-android', async () => {
+    return await tester.checkAndroidState();
 });
 
 ipcMain.handle('check-android-setup', async () => {
